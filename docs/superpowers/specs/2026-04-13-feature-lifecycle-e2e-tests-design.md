@@ -116,19 +116,20 @@ A module-level fixture checks `GET http://localhost:8765/api/docs` (or any fast 
 3. Yields `(tmp_path, httpx.Client(base_url="http://localhost:8765"))`
 4. Teardown: `POST .../sessions/smoke-sess-1/discard` best-effort (ignores errors)
 
-### Test class: `TestLiveLifecycle`
+### Test functions
 
-Tests run sequentially (ordered, each depends on previous state):
+Each lifecycle step is a separate `test_*` function but they share the `live_project` fixture which provides a fresh temp dir per test run. The full lifecycle is covered across:
 
-- `test_start_registers_feature` — `POST .../features/smoke-test/start` `{session_id: "smoke-sess-1"}` → 200, `GET /features` contains `smoke-test` with `status=active`
-- `test_milestone_recorded` — `POST .../sessions/smoke-sess-1/milestone` `{text: "smoke milestone"}` → `GET /features` → feature has 1 milestone
-- `test_complete_writes_markdown` — `POST .../sessions/smoke-sess-1/complete` `{summary: "Smoke test complete."}` → `GET /features` → `status=completed`, `tmp_path/features/smoke_test.md` exists and contains "Smoke test complete."
-- `test_server_rejects_unknown_project` — `POST /api/projects/NONEXISTENT_PATH.../features/x/start` → 404
+- `test_live_start_registers_feature` — `POST .../features/smoke-test/start` `{session_id: "smoke-sess-1"}` → 200, `GET /features` contains `smoke-test` with `status=active`
+- `test_live_lifecycle_complete` — full sequence in one test: start → milestone → complete → assert `GET /features` `status=completed` and `tmp_path/features/smoke_test.md` contains "Smoke test complete."
+- `test_server_rejects_unknown_project` — `POST /api/projects/NONEXISTENT_PATH/features/x/start` → 404
+
+Using a single combined test for the chained lifecycle avoids `pytest-ordering` as a dependency (no new packages needed). The independent connectivity/rejection tests stay separate for clear failure messages.
 
 ### Notes
 
 - `httpx.Client` used (sync) to match the existing e2e test style in `bridgecrew/tests/e2e/`
-- Tests use `pytest-ordering` or natural sequence (not `pytest.mark.dependency`) to keep the dependency simple
+- No new test dependencies — `httpx` is already in `requirements.txt`
 - The smoke test does not clean up the temp dir — it's a `tmp_path` which pytest removes automatically
 
 ---
