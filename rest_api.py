@@ -22,7 +22,6 @@ class RegisterProjectPayload(BaseModel):
 
 class StartFeaturePayload(BaseModel):
     session_id: str
-    subdir: str | None = None
     force: bool = False
 
 

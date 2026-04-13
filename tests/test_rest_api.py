@@ -79,14 +79,8 @@ def test_get_features_returns_list(client):
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
-def _enc(path):
-    from urllib.parse import quote
-    return quote(str(path), safe="")
-
-
 def _started_fixture(store, tmp_project, session_id="sess-a", name="e2e-feat"):
     """Helper: start a feature via store directly (so tests don't depend on REST start)."""
-    from feature_store import _now_iso
     now = _now_iso()
     data = {
         "name": name, "status": "active", "session_id": session_id,
@@ -105,12 +99,13 @@ def _started_fixture(store, tmp_project, session_id="sess-a", name="e2e-feat"):
 def test_register_project_new(client, tmp_path):
     c, store, tmp_project = client
     new_dir = tmp_path / "new_proj"
-    (new_dir / ".claude" / "features").mkdir(parents=True)
+    new_dir.mkdir()
     r = c.post("/api/projects", json={"project_dir": str(new_dir)})
     assert r.status_code == 200
     assert r.json()["status"] == "registered"
+    assert (new_dir / ".claude" / "features").exists()
     # now recognized by store
-    r2 = c.get(f"/api/projects/{_enc(new_dir)}/features")
+    r2 = c.get(f"/api/projects/{_encode(new_dir)}/features")
     assert r2.status_code == 200
 
 
@@ -126,7 +121,7 @@ def test_register_project_idempotent(client):
 def test_rest_start_creates_feature(client):
     c, store, tmp_project = client
     r = c.post(
-        f"/api/projects/{_enc(tmp_project)}/features/my-feat/start",
+        f"/api/projects/{_encode(tmp_project)}/features/my-feat/start",
         json={"session_id": "sess-1"},
     )
     assert r.status_code == 200
@@ -138,7 +133,7 @@ def test_rest_start_conflict(client):
     c, store, tmp_project = client
     _started_fixture(store, tmp_project, "sess-existing", "shared")
     r = c.post(
-        f"/api/projects/{_enc(tmp_project)}/features/shared/start",
+        f"/api/projects/{_encode(tmp_project)}/features/shared/start",
         json={"session_id": "sess-new"},
     )
     assert r.status_code == 200
@@ -150,7 +145,7 @@ def test_rest_start_force(client):
     c, store, tmp_project = client
     _started_fixture(store, tmp_project, "sess-old", "shared")
     r = c.post(
-        f"/api/projects/{_enc(tmp_project)}/features/shared/start",
+        f"/api/projects/{_encode(tmp_project)}/features/shared/start",
         json={"session_id": "sess-new", "force": True},
     )
     assert r.status_code == 200
@@ -161,7 +156,7 @@ def test_rest_start_force(client):
 def test_rest_start_unknown_project(client):
     c, store, tmp_project = client
     r = c.post(
-        f"/api/projects/{_enc('/nonexistent')}/features/x/start",
+        f"/api/projects/{_encode('/nonexistent')}/features/x/start",
         json={"session_id": "s"},
     )
     assert r.status_code == 404
@@ -169,7 +164,6 @@ def test_rest_start_unknown_project(client):
 
 # ── POST .../sessions/{id}/resume ─────────────────────────────────────────
 def test_rest_resume_feature(client):
-    from feature_store import _now_iso
     c, store, tmp_project = client
     _started_fixture(store, tmp_project, "sess-1", "my-feat")
     # complete it first so it can be resumed
@@ -180,7 +174,7 @@ def test_rest_resume_feature(client):
     store.unregister_session("sess-1")
 
     r = c.post(
-        f"/api/projects/{_enc(tmp_project)}/sessions/sess-2/resume",
+        f"/api/projects/{_encode(tmp_project)}/sessions/sess-2/resume",
         json={"feature_name": "my-feat"},
     )
     assert r.status_code == 200
@@ -191,7 +185,7 @@ def test_rest_resume_feature(client):
 def test_rest_resume_not_found(client):
     c, store, tmp_project = client
     r = c.post(
-        f"/api/projects/{_enc(tmp_project)}/sessions/sess-1/resume",
+        f"/api/projects/{_encode(tmp_project)}/sessions/sess-1/resume",
         json={"feature_name": "ghost"},
     )
     assert r.status_code == 200
@@ -203,7 +197,7 @@ def test_rest_complete_writes_markdown(client):
     c, store, tmp_project = client
     _started_fixture(store, tmp_project, "sess-1", "done-feat")
     r = c.post(
-        f"/api/projects/{_enc(tmp_project)}/sessions/sess-1/complete",
+        f"/api/projects/{_encode(tmp_project)}/sessions/sess-1/complete",
         json={"summary": "Built the thing."},
     )
     assert r.status_code == 200
@@ -217,7 +211,7 @@ def test_rest_complete_unregisters_session(client):
     c, store, tmp_project = client
     _started_fixture(store, tmp_project, "sess-1", "done-feat")
     c.post(
-        f"/api/projects/{_enc(tmp_project)}/sessions/sess-1/complete",
+        f"/api/projects/{_encode(tmp_project)}/sessions/sess-1/complete",
         json={"summary": "Done."},
     )
     assert store.get_session_feature(tmp_project, "sess-1") is None
@@ -226,7 +220,7 @@ def test_rest_complete_unregisters_session(client):
 def test_rest_complete_no_active(client):
     c, store, tmp_project = client
     r = c.post(
-        f"/api/projects/{_enc(tmp_project)}/sessions/nobody/complete",
+        f"/api/projects/{_encode(tmp_project)}/sessions/nobody/complete",
         json={"summary": "x"},
     )
     assert r.status_code == 200
@@ -237,11 +231,11 @@ def test_rest_complete_no_active(client):
 def test_rest_discard_deletes_json(client):
     c, store, tmp_project = client
     _started_fixture(store, tmp_project, "sess-1", "dead-feat")
-    r = c.post(f"/api/projects/{_enc(tmp_project)}/sessions/sess-1/discard")
+    r = c.post(f"/api/projects/{_encode(tmp_project)}/sessions/sess-1/discard")
     assert r.status_code == 200
     assert r.json()["status"] == "discarded"
     # JSON file removed → GET /features returns empty
-    r2 = c.get(f"/api/projects/{_enc(tmp_project)}/features")
+    r2 = c.get(f"/api/projects/{_encode(tmp_project)}/features")
     assert r2.json() == []
 
 
@@ -251,7 +245,7 @@ def test_rest_discard_archives_markdown(client):
     md = tmp_project / "features" / "dead-feat.md"
     md.parent.mkdir(exist_ok=True)
     md.write_text("# dead-feat\nsome content")
-    c.post(f"/api/projects/{_enc(tmp_project)}/sessions/sess-1/discard")
+    c.post(f"/api/projects/{_encode(tmp_project)}/sessions/sess-1/discard")
     assert not md.exists()
     assert (tmp_project / "features" / "_archived" / "dead-feat.md").exists()
 
@@ -261,7 +255,7 @@ def test_rest_milestone_added(client):
     c, store, tmp_project = client
     _started_fixture(store, tmp_project, "sess-1", "wip")
     r = c.post(
-        f"/api/projects/{_enc(tmp_project)}/sessions/sess-1/milestone",
+        f"/api/projects/{_encode(tmp_project)}/sessions/sess-1/milestone",
         json={"text": "reached checkpoint"},
     )
     assert r.status_code == 200
@@ -273,7 +267,7 @@ def test_rest_milestone_added(client):
 def test_rest_milestone_no_active(client):
     c, store, tmp_project = client
     r = c.post(
-        f"/api/projects/{_enc(tmp_project)}/sessions/nobody/milestone",
+        f"/api/projects/{_encode(tmp_project)}/sessions/nobody/milestone",
         json={"text": "x"},
     )
     assert r.status_code == 200
